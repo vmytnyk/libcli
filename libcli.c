@@ -947,8 +947,8 @@ static int cli_find_command(struct cli_def *cli, struct cli_command *commands, i
                 if ( c->param )
                 {
                     cli_callback2_f cb = (cli_callback2_f)c->callback ;
-                    rc = cb(c->param,
-                            cli, cli_command_name(cli, c), words + start_word + 1, c_words - start_word - 1);
+                    rc = cb(c->param, cli, c,
+                            cli_command_name(cli, c), words + start_word + 1, c_words - start_word - 1);
                 }
                 else
                 {
@@ -2373,6 +2373,11 @@ void *cli_get_context(struct cli_def *cli) {
 }
 
 //CUSTOM FUNCTION
+char * cli_cmd_help(struct cli_command * cmd)
+{
+    return cmd->help ;
+}
+
 char * cli_get_cmd_help(struct cli_def *cli, const char * cmd)
 {
     char *help = NULL , *words[CLI_MAX_LINE_WORDS] = { 0 };
@@ -2407,10 +2412,16 @@ char * cli_get_cmd_help(struct cli_def *cli, const char * cmd)
 int cli_unregister_subcommand(struct cli_def *cli,
         struct cli_command * parent, const char *command, int privilege, int mode )
 {
+    return cli_unregister_subcommand2( cli, parent, command, privilege, mode , NULL ) ;
+}
+
+int cli_unregister_subcommand2(struct cli_def *cli,
+        struct cli_command * parent, const char *command, int privilege, int mode , void ** param )
+{
     struct cli_command **c, *p = NULL;
 
     if (!command) return -1;
-    if (!parent) return cli_unregister_command( cli, command ) ;
+    if (!parent) return cli_unregister_subcommand2( cli, cli->commands, command, privilege, mode , param ) ;
     if (!cli->commands) return CLI_OK;
 
     for (c = &parent->children; *c; c = &p->next)
@@ -2420,12 +2431,14 @@ int cli_unregister_subcommand(struct cli_def *cli,
              && ( 0 == strcmp(p->command, command) ) )
         {
             *c = p->next; //update pointer in container
+            if ( NULL != param ) *param = p->param ;
             cli_free_command(p);
             return CLI_OK;
         }
     }
 
     return CLI_OK;
+
 }
 
 struct cli_command *cli_register_command2(struct cli_def *cli, struct cli_command *parent, const char *command,
