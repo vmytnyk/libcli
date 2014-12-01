@@ -379,6 +379,7 @@ struct cli_command *cli_register_command(struct cli_def *cli, struct cli_command
 
     c->callback = callback;
     c->next = NULL;
+    c->param = NULL ;
     if (!(c->command = strdup(command)))
         return NULL;
     c->parent = parent;
@@ -942,7 +943,18 @@ static int cli_find_command(struct cli_def *cli, struct cli_command *commands, i
             }
 
             if (rc == CLI_OK)
-                rc = c->callback(cli, cli_command_name(cli, c), words + start_word + 1, c_words - start_word - 1);
+            {
+                if ( c->param )
+                {
+                    cli_callback2_f cb = (cli_callback2_f)c->callback ;
+                    rc = cb(c->param,
+                            cli, cli_command_name(cli, c), words + start_word + 1, c_words - start_word - 1);
+                }
+                else
+                {
+                    rc = c->callback(cli, cli_command_name(cli, c), words + start_word + 1, c_words - start_word - 1);
+                }
+            }
 
             while (cli->filters)
             {
@@ -2414,4 +2426,17 @@ int cli_unregister_subcommand(struct cli_def *cli,
     }
 
     return CLI_OK;
+}
+
+struct cli_command *cli_register_command2(struct cli_def *cli, struct cli_command *parent, const char *command,
+                                         int (*callback2)(void * param, struct cli_def *, const char *, char **, int),
+                                         void * param, int privilege, int mode, const char *help)
+{
+    struct cli_command * cmd ;
+    cmd = cli_register_command( cli, parent, command, (cli_callback_f)callback2, privilege, mode, help) ;
+    if (cmd)
+    {
+        cmd->param = param ;
+    }
+    return cmd;
 }

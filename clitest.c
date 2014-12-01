@@ -159,6 +159,16 @@ int cmd_debug_regular(struct cli_def *cli, UNUSED(const char *command), char *ar
     return CLI_OK;
 }
 
+int cmd_toggle(void * param, struct cli_def *cli, const char *command, char *argv[], int argc)
+{
+    int * local_toggle_ptr = (int *)param;
+
+    *local_toggle_ptr = !(*local_toggle_ptr) ;
+    cli_print(cli, "toggle status to:%d", *local_toggle_ptr );
+
+    return CLI_OK;
+}
+
 int cmd_nested_toggle(struct cli_def *cli, const char *command, char *argv[], int argc)
 {
     nested_status = !nested_status;
@@ -231,6 +241,7 @@ int main()
     int s, x;
     struct sockaddr_in addr;
     int on = 1;
+    int local_toggle = 0 ;
 
 #ifndef WIN32
     signal(SIGCHLD, SIG_IGN);
@@ -289,6 +300,9 @@ int main()
 
     nested = cli_register_command(cli, NULL, "nested", NULL, PRIVILEGE_UNPRIVILEGED, MODE_EXEC, NULL);
     cli_register_command(cli, nested, "remove", cmd_nested_toggle, PRIVILEGE_UNPRIVILEGED, MODE_EXEC, "cmd_nested_remove");
+
+    cli_register_command2(cli, NULL, "toggle", cmd_toggle, &local_toggle ,
+            PRIVILEGE_UNPRIVILEGED, MODE_EXEC, "toggle with function params");
 
     // Set user context and its command
     cli_set_context(cli, (void*)&myctx);
