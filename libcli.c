@@ -379,6 +379,7 @@ struct cli_command *cli_register_command(struct cli_def *cli, struct cli_command
 
     c->callback = callback;
     c->next = NULL;
+    c->param = NULL ;
     if (!(c->command = strdup(command)))
         return NULL;
     c->parent = parent;
@@ -723,7 +724,7 @@ static int cli_parse_line(const char *line, char *words[], int max_words)
             inquote = 0;
             word_start = 0;
         }
-        else if (*p == '"' || *p == '\'')
+        else if (0 == inquote && ( *p == '"' || *p == '\'' ) )
         {
             inquote = *p++;
             word_start = p;
@@ -732,9 +733,9 @@ static int cli_parse_line(const char *line, char *words[], int max_words)
         {
             if (!word_start)
             {
-                if (*p == '|')
+                if ( *p == '|' )
                 {
-                    if (!(words[nwords++] = strdup("|")))
+                    if (!(words[nwords++] = strdup("||")))
                         return 0;
                 }
                 else if (!isspace(*p))
@@ -942,7 +943,18 @@ static int cli_find_command(struct cli_def *cli, struct cli_command *commands, i
             }
 
             if (rc == CLI_OK)
-                rc = c->callback(cli, cli_command_name(cli, c), words + start_word + 1, c_words - start_word - 1);
+            {
+                if ( c->param )
+                {
+                    cli_callback2_f cb = (cli_callback2_f)c->callback ;
+                    rc = cb(c->param, cli, c,
+                            cli_command_name(cli, c), words + start_word + 1, c_words - start_word - 1);
+                }
+                else
+                {
+                    rc = c->callback(cli, cli_command_name(cli, c), words + start_word + 1, c_words - start_word - 1);
+                }
+            }
 
             while (cli->filters)
             {
@@ -1005,7 +1017,7 @@ int cli_run_command(struct cli_def *cli, const char *command)
     num_words = cli_parse_line(command, words, CLI_MAX_LINE_WORDS);
     for (i = f = 0; i < num_words && f < CLI_MAX_LINE_WORDS - 1; i++)
     {
-        if (words[i][0] == '|')
+        if ( (words[i][0] == '|') && (words[i][1] == '|') )
         filters[f++] = i;
     }
 
@@ -1421,6 +1433,7 @@ int cli_loop(struct cli_def *cli, int sockfd)
 
                         default:
                             c = 0;
+                            break ;
                     }
 
                     esc = 0;
@@ -2357,4 +2370,86 @@ void cli_set_context(struct cli_def *cli, void *context) {
 
 void *cli_get_context(struct cli_def *cli) {
     return cli->user_context;
+}
+
+//CUSTOM FUNCTION
+char * cli_cmd_help(struct cli_command * cmd)
+{
+    return cmd->help ;
+}
+
+char * cli_get_cmd_help(struct cli_def *cli, const char * cmd)
+{
+    char *help = NULL , *words[CLI_MAX_LINE_WORDS] = { 0 };
+    struct cli_command *c ;
+    int i, num_words = 0 , ii ;
+
+    num_words = cli_parse_line(cmd, words, CLI_MAX_LINE_WORDS);
+
+    for ( ii = 0 , c = cli->commands ; (c != NULL) && (ii < num_words) ; /* done in loop */ )
+    {
+        if (    ( c->privilege == cli->privilege )
+             && ( (c->mode == cli->mode) || (c->mode == MODE_ANY) )
+             && ( 0 == strncasecmp(c->command, words[ii], c->unique_len) )
+             && ( 0 == strncasecmp(c->command, words[ii], strlen(words[ii])) ) )
+        {
+            help = c->help ;
+            c = c->children ;
+            ++ii ;
+        }
+        else
+        {
+            c = c->next ;
+        }
+    }
+
+    for ( i = 0 ; i < num_words ; ++i )
+        free(words[i]);
+
+    return ( ii == num_words ) ? help : NULL ;
+}
+
+int cli_unregister_subcommand(struct cli_def *cli,
+        struct cli_command * parent, const char *command, int privilege, int mode )
+{
+    return cli_unregister_subcommand2( cli, parent, command, privilege, mode , NULL ) ;
+}
+
+int cli_unregister_subcommand2(struct cli_def *cli,
+        struct cli_command * parent, const char *command, int privilege, int mode , void ** param )
+{
+    struct cli_command **c, *p = NULL;
+
+    if (!command) return -1;
+    if (!parent) return cli_unregister_subcommand2( cli, cli->commands, command, privilege, mode , param ) ;
+    if (!cli->commands) return CLI_OK;
+
+    for (c = &parent->children; *c; c = &p->next)
+    {
+        p = *c;
+        if (    ( p->privilege == privilege ) && ( p->mode == mode )
+             && ( 0 == strcmp(p->command, command) ) )
+        {
+            *c = p->next; //update pointer in container
+            if ( NULL != param ) *param = p->param ;
+            cli_free_command(p);
+            return CLI_OK;
+        }
+    }
+
+    return CLI_OK;
+
+}
+
+struct cli_command *cli_register_command2(struct cli_def *cli, struct cli_command *parent, const char *command,
+                                         int (*callback2)(void * param, struct cli_def *, const char *, char **, int),
+                                         void * param, int privilege, int mode, const char *help)
+{
+    struct cli_command * cmd ;
+    cmd = cli_register_command( cli, parent, command, (cli_callback_f)callback2, privilege, mode, help) ;
+    if (cmd)
+    {
+        cmd->param = param ;
+    }
+    return cmd;
 }

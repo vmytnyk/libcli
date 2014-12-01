@@ -28,6 +28,8 @@
 
 unsigned int regular_count = 0;
 unsigned int debug_regular = 0;
+unsigned int nested_status = 1;
+struct cli_command *nested = NULL ;
 
 struct my_context {
   int value;
@@ -157,6 +159,38 @@ int cmd_debug_regular(struct cli_def *cli, UNUSED(const char *command), char *ar
     return CLI_OK;
 }
 
+int cmd_toggle(void * param, struct cli_def *cli, const char *command, char *argv[], int argc)
+{
+    int * local_toggle_ptr = (int *)param;
+
+    *local_toggle_ptr = !(*local_toggle_ptr) ;
+    cli_print(cli, "toggle status to:%d", *local_toggle_ptr );
+
+    return CLI_OK;
+}
+
+int cmd_nested_toggle(struct cli_def *cli, const char *command, char *argv[], int argc)
+{
+    nested_status = !nested_status;
+
+    cli_print(cli, "%s" , cli_get_cmd_help( cli, command) );
+
+    cli_print(cli, "toggle nested_status to:%d", nested_status );
+    if ( !nested_status )
+    {
+        cli_unregister_subcommand( cli, nested, "remove", PRIVILEGE_UNPRIVILEGED, MODE_EXEC );
+        cli_register_command(cli, nested, "add", cmd_nested_toggle, PRIVILEGE_UNPRIVILEGED, MODE_EXEC, "toggle nested remove");
+    }
+    else
+    {
+        cli_unregister_subcommand( cli, nested, "add", PRIVILEGE_UNPRIVILEGED, MODE_EXEC );
+        cli_register_command(cli, nested, "remove", cmd_nested_toggle, PRIVILEGE_UNPRIVILEGED, MODE_EXEC, "toggle nested add");
+    }
+
+    return CLI_OK;
+}
+
+
 int cmd_context(struct cli_def *cli, UNUSED(const char *command), UNUSED(char *argv[]), UNUSED(int argc))
 {
     struct my_context *myctx = (struct my_context *)cli_get_context(cli);
@@ -207,6 +241,7 @@ int main()
     int s, x;
     struct sockaddr_in addr;
     int on = 1;
+    int local_toggle = 0 ;
 
 #ifndef WIN32
     signal(SIGCHLD, SIG_IGN);
@@ -261,6 +296,13 @@ int main()
 
     cli_register_command(cli, c, "regular", cmd_debug_regular, PRIVILEGE_UNPRIVILEGED, MODE_EXEC,
                          "Enable cli_regular() callback debugging");
+
+
+    nested = cli_register_command(cli, NULL, "nested", NULL, PRIVILEGE_UNPRIVILEGED, MODE_EXEC, NULL);
+    cli_register_command(cli, nested, "remove", cmd_nested_toggle, PRIVILEGE_UNPRIVILEGED, MODE_EXEC, "cmd_nested_remove");
+
+    cli_register_command2(cli, NULL, "toggle", cmd_toggle, &local_toggle ,
+            PRIVILEGE_UNPRIVILEGED, MODE_EXEC, "toggle with function params");
 
     // Set user context and its command
     cli_set_context(cli, (void*)&myctx);
